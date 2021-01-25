@@ -62,7 +62,7 @@ func formatSrt(bs []byte) ([]byte, error) {
 				if len(m) != 9 {
 					log.Fatal("line:", lineNum, " invalid time format: ", line)
 				}
-				w.WriteString(fmt.Sprintf("%02s:%02s:%02s,%s --> %02s:%02s:%02s,%s\n",
+				w.WriteString(fmt.Sprintf("%02s:%02s:%02s,%03s --> %02s:%02s:%02s,%03s\n",
 					m[1], m[2], m[3], m[4],
 					m[5], m[6], m[7], m[8]))
 				stage = srtExpectText
