@@ -32,6 +32,13 @@ const (
 	srtExpectText
 )
 
+type SubLine struct {
+	Index int
+	Start string
+	End   string
+	Text  string
+}
+
 func formatSrt(bs []byte) ([]byte, error) {
 	indexNum := 0
 	lineNum := 0
@@ -39,8 +46,10 @@ func formatSrt(bs []byte) ([]byte, error) {
 	// convert 0: 1: 2,342 -->  0: 1: 5,334 to 00:01:02,342 --> 00:01:05,334
 	timeReg := regexp.MustCompile(`^(\d+):\s*([\d]+):\s*([\d]+),\s*(\d+)\s+-->\s+\s*([\d]+):\s*([\d]+):\s*([\d]+),\s*(\d+)$`)
 
+	subLines := []*SubLine{}
+	var subLine *SubLine
+
 	r := bytes.NewBuffer(bs)
-	w := bytes.NewBuffer(nil)
 	scanner := bufio.NewScanner(utfbom.SkipOnly(r))
 	for scanner.Scan() {
 		lineNum += 1
@@ -53,7 +62,7 @@ func formatSrt(bs []byte) ([]byte, error) {
 					log.Fatal("line:", lineNum, " expect number: ", err)
 				}
 				indexNum += 1
-				w.WriteString(fmt.Sprintf("%d\n", indexNum))
+				subLine = &SubLine{Index: indexNum}
 				stage = srtExpectTime
 			}
 		case srtExpectTime:
@@ -62,17 +71,33 @@ func formatSrt(bs []byte) ([]byte, error) {
 				if len(m) != 9 {
 					log.Fatal("line:", lineNum, " invalid time format: ", line)
 				}
-				w.WriteString(fmt.Sprintf("%02s:%02s:%02s,%03s --> %02s:%02s:%02s,%03s\n",
-					m[1], m[2], m[3], m[4],
-					m[5], m[6], m[7], m[8]))
+				subLine.Start = fmt.Sprintf("%02s:%02s:%02s,%03s", m[1], m[2], m[3], m[4])
+				subLine.End = fmt.Sprintf("%02s:%02s:%02s,%03s", m[5], m[6], m[7], m[8])
 				stage = srtExpectText
 			}
 		case srtExpectText:
 			{
-				w.WriteString(line)
-				w.WriteString("\n")
-				if len(line) == 0 {
+				if line == "" {
 					stage = srtExpectNum
+					duplicated := false
+					if len(subLines) > 0 {
+						lastLine := subLines[len(subLines)-1]
+						if lastLine.End == subLine.Start &&
+							lastLine.Text == subLine.Text {
+							lastLine.End = subLine.End
+							indexNum -= 1
+							duplicated = true
+						}
+					}
+
+					if !duplicated {
+						subLines = append(subLines, subLine)
+					}
+				} else {
+					if subLine.Text != "" {
+						subLine.Text += "\n"
+					}
+					subLine.Text += line
 				}
 			}
 		}
@@ -80,6 +105,13 @@ func formatSrt(bs []byte) ([]byte, error) {
 
 	if err := scanner.Err(); err != nil {
 		return nil, err
+	}
+
+	w := bytes.NewBuffer(nil)
+	for _, sub := range subLines {
+		w.WriteString(fmt.Sprintf("%d\n", sub.Index))
+		w.WriteString(fmt.Sprintf("%s --> %s\n", sub.Start, sub.End))
+		w.WriteString(fmt.Sprintf("%s\n\n", sub.Text))
 	}
 
 	return w.Bytes(), nil
